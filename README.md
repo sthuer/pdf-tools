@@ -15,6 +15,7 @@ Simple Python tool to:
 
 ```bash
 pip install pymupdf pillow
+```
 
 ## Usage
 
