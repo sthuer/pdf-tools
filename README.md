@@ -25,8 +25,10 @@ py pdf_tool.py compress input\\file.pdf
 Export pages
 py pdf_tool.py export input\\file.pdf --pages 1,3-5
 
+
 Compress + export
 py pdf_tool.py both input\\file.pdf
+
 
 Options
 --pages → page selection (e.g. 2, 2,5,7, 2-10)
