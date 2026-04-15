@@ -5,6 +5,7 @@ Simple Python tool to:
 
 - Compress PDF files using Ghostscript
 - Export PDF pages as images (WebP or JPEG)
+- Process one file or all PDFs in a folder (new!)
 
 ## Requirements
 

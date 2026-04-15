@@ -1,10 +1,31 @@
 import os
 import re
+import sys
 import shutil
 import subprocess
 import argparse
 import fitz
 from PIL import Image
+
+
+def print_quick_help():
+    print("""
+PDF Tool - Usage
+
+Commands:
+  compress   Compress PDF
+  export     Export PDF pages as images
+  both       Compress PDF and export pages
+
+Examples:
+  py pdf_tool.py compress input\\revista.pdf
+  py pdf_tool.py export input\\revista.pdf --pages 1,3-5
+  py pdf_tool.py both input\\revista.pdf
+  py pdf_tool.py both --batch
+  py pdf_tool.py export --batch --pages 1,3
+
+Use --help after any command for more details.
+""")
 
 
 def find_ghostscript():
@@ -28,7 +49,7 @@ def find_ghostscript():
     )
 
 
-def compress_pdf(input_path, output_path, quality="ebook"):
+def compress_pdf(input_path, output_path, quality="screen"):
     gs = find_ghostscript()
 
     command = [
@@ -134,28 +155,38 @@ def print_file_size(label, path):
         print(f"{label}: {size_kb:.0f} KB")
 
 
+def get_pdf_files_from_input_dir(input_dir="input"):
+    if not os.path.isdir(input_dir):
+        raise FileNotFoundError(f"No existe la carpeta: {input_dir}")
+
+    pdf_files = []
+    for file_name in os.listdir(input_dir):
+        if file_name.lower().endswith(".pdf"):
+            pdf_files.append(os.path.join(input_dir, file_name))
+
+    pdf_files.sort()
+    return pdf_files
+
+
+def resolve_input_files(input_pdf=None, batch=False, input_dir="input"):
+    if batch:
+        files = get_pdf_files_from_input_dir(input_dir)
+        if not files:
+            raise FileNotFoundError(f"No se encontraron PDFs en la carpeta: {input_dir}")
+        return files
+
+    if input_pdf:
+        if not os.path.exists(input_pdf):
+            raise FileNotFoundError(f"No existe el archivo: {input_pdf}")
+        return [input_pdf]
+
+    raise ValueError("Debés indicar un archivo PDF o usar --batch.")
+
+
 def main():
-
-    import sys
-
-    def main():
-        if len(sys.argv) == 1 or "/?" in sys.argv:
-            print("""
-    PDF Tool - Usage
-
-    Commands:
-    compress   Compress PDF
-    export     Export pages as images
-    both       Compress PDF and export pages
-
-    Examples:
-    py pdf_tool.py compress input\\file.pdf
-    py pdf_tool.py export input\\file.pdf --pages 1,3-5
-    py pdf_tool.py both input\\file.pdf --format jpeg
-
-    Use --help after any command for more details.
-    """)
-            return
+    if len(sys.argv) == 1 or "?" in sys.argv:
+        print_quick_help()
+        return
 
     parser = argparse.ArgumentParser(
         description="Compress PDF and/or export PDF pages as images."
@@ -165,7 +196,9 @@ def main():
 
     # compress
     compress_parser = subparsers.add_parser("compress", help="Compress PDF only")
-    compress_parser.add_argument("input_pdf", help="Path to input PDF")
+    compress_parser.add_argument("input_pdf", nargs="?", help="Path to input PDF")
+    compress_parser.add_argument("--batch", action="store_true", help="Process all PDF files in input directory")
+    compress_parser.add_argument("--input-dir", default="input", help="Input directory for batch mode")
     compress_parser.add_argument("--output-dir", default="output", help="Output directory")
     compress_parser.add_argument(
         "--pdf-quality",
@@ -176,7 +209,9 @@ def main():
 
     # export
     export_parser = subparsers.add_parser("export", help="Export PDF pages as images")
-    export_parser.add_argument("input_pdf", help="Path to input PDF")
+    export_parser.add_argument("input_pdf", nargs="?", help="Path to input PDF")
+    export_parser.add_argument("--batch", action="store_true", help="Process all PDF files in input directory")
+    export_parser.add_argument("--input-dir", default="input", help="Input directory for batch mode")
     export_parser.add_argument("--output-dir", default="output", help="Output directory")
     export_parser.add_argument("--pages", default="1", help="Pages to export, e.g. 2 or 2,5,7 or 2-10")
     export_parser.add_argument("--format", default="webp", choices=["webp", "jpeg", "jpg"], help="Image format")
@@ -185,11 +220,13 @@ def main():
 
     # both
     both_parser = subparsers.add_parser("both", help="Compress PDF and export pages as images")
-    both_parser.add_argument("input_pdf", help="Path to input PDF")
+    both_parser.add_argument("input_pdf", nargs="?", help="Path to input PDF")
+    both_parser.add_argument("--batch", action="store_true", help="Process all PDF files in input directory")
+    both_parser.add_argument("--input-dir", default="input", help="Input directory for batch mode")
     both_parser.add_argument("--output-dir", default="output", help="Output directory")
     both_parser.add_argument(
         "--pdf-quality",
-        default="ebook",
+        default="screen",
         choices=["screen", "ebook", "printer", "prepress", "default"],
         help="Ghostscript PDF quality preset"
     )
@@ -202,62 +239,72 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    if not os.path.exists(args.input_pdf):
-        raise FileNotFoundError(f"No existe el archivo: {args.input_pdf}")
-
-    base_name = os.path.splitext(os.path.basename(args.input_pdf))[0]
-
     if args.command == "compress":
-        optimized_pdf = os.path.join(args.output_dir, f"{base_name}-optimized.pdf")
+        input_files = resolve_input_files(args.input_pdf, args.batch, args.input_dir)
 
-        print("1) Compressing PDF...")
-        compress_pdf(args.input_pdf, optimized_pdf, quality=args.pdf_quality)
+        for input_file in input_files:
+            base_name = os.path.splitext(os.path.basename(input_file))[0]
+            optimized_pdf = os.path.join(args.output_dir, f"{base_name}-optimized.pdf")
 
-        print("\nDone.")
-        print_file_size("Original PDF", args.input_pdf)
-        print_file_size("Compressed PDF", optimized_pdf)
-        print(f"Output: {optimized_pdf}")
+            print(f"\nProcessing: {input_file}")
+            print("1) Compressing PDF...")
+            compress_pdf(input_file, optimized_pdf, quality=args.pdf_quality)
+
+            print("Done.")
+            print_file_size("Original PDF", input_file)
+            print_file_size("Compressed PDF", optimized_pdf)
+            print(f"Output: {optimized_pdf}")
 
     elif args.command == "export":
-        print("1) Exporting page(s) as image...")
-        outputs = export_pages_as_images(
-            args.input_pdf,
-            args.output_dir,
-            pages_str=args.pages,
-            image_format=args.format,
-            dpi=args.dpi,
-            quality=args.image_quality,
-        )
+        input_files = resolve_input_files(args.input_pdf, args.batch, args.input_dir)
 
-        print("\nDone.")
-        for output in outputs:
-            print_file_size("Image", output)
-            print(f"Output: {output}")
+        for input_file in input_files:
+            print(f"\nProcessing: {input_file}")
+            print("1) Exporting page(s) as image...")
+
+            outputs = export_pages_as_images(
+                input_file,
+                args.output_dir,
+                pages_str=args.pages,
+                image_format=args.format,
+                dpi=args.dpi,
+                quality=args.image_quality,
+            )
+
+            print("Done.")
+            for output in outputs:
+                print_file_size("Image", output)
+                print(f"Output: {output}")
 
     elif args.command == "both":
-        optimized_pdf = os.path.join(args.output_dir, f"{base_name}-optimized.pdf")
+        input_files = resolve_input_files(args.input_pdf, args.batch, args.input_dir)
 
-        print("1) Compressing PDF...")
-        compress_pdf(args.input_pdf, optimized_pdf, quality=args.pdf_quality)
+        for input_file in input_files:
+            base_name = os.path.splitext(os.path.basename(input_file))[0]
+            optimized_pdf = os.path.join(args.output_dir, f"{base_name}-optimized.pdf")
 
-        print("2) Exporting page(s) as image...")
-        outputs = export_pages_as_images(
-            optimized_pdf,
-            args.output_dir,
-            pages_str=args.pages,
-            image_format=args.format,
-            dpi=args.dpi,
-            quality=args.image_quality,
-        )
+            print(f"\nProcessing: {input_file}")
+            print("1) Compressing PDF...")
+            compress_pdf(input_file, optimized_pdf, quality=args.pdf_quality)
 
-        print("\nDone.")
-        print_file_size("Original PDF", args.input_pdf)
-        print_file_size("Compressed PDF", optimized_pdf)
-        print(f"Output PDF: {optimized_pdf}")
+            print("2) Exporting page(s) as image...")
+            outputs = export_pages_as_images(
+                optimized_pdf,
+                args.output_dir,
+                pages_str=args.pages,
+                image_format=args.format,
+                dpi=args.dpi,
+                quality=args.image_quality,
+            )
 
-        for output in outputs:
-            print_file_size("Image", output)
-            print(f"Output image: {output}")
+            print("Done.")
+            print_file_size("Original PDF", input_file)
+            print_file_size("Compressed PDF", optimized_pdf)
+            print(f"Output PDF: {optimized_pdf}")
+
+            for output in outputs:
+                print_file_size("Image", output)
+                print(f"Output image: {output}")
 
 
 if __name__ == "__main__":
